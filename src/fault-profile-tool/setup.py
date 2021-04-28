@@ -14,7 +14,7 @@ linux_install_requires = ["numpy>=1.17",
                           "geopandas>=0.6.1",
                           "netcdf4>=1.4.2",
                           "ipython>=7.9.0",
-                          "PyQt5>=5.12.1",
+                          "PyQt5>=5.13.1",
                           "scipy>=1.3.1",
                           "rasterio>=1.1.0"]
 windows_install_requires = []
