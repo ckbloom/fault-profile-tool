@@ -1,15 +1,78 @@
 from PyQt5 import QtWidgets
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
-import matplotlib.ticker as ticker
-from matplotlib import pyplot as plt
 from typing import Union, Tuple
 import numpy as np
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from collections import Iterable
 from shapely.geometry import MultiLineString, LineString, Point
 
 from matplotlib.colors import LightSource
+
+
+def square_box_from_bounds(xmin: Union[int, float], ymin: Union[int, float], xmax: Union[int, float],
+                           ymax: Union[int, float], profile_centre_x: Union[int, float],
+                           profile_centre_y: Union[int, float], edge_buffer: Union[int, float] = 5):
+    """
+    Returns the bounds of a box square box that includes all points on a polygon (e.g. swath)
+    :param xmin:
+    :param ymin:
+    :param xmax:
+    :param ymax:
+    :param profile_centre_x:
+    :param profile_centre_y:
+    :param edge_buffer:
+    :return: square_x1, square_y1, square_x2, square_y2
+    """
+    # Make box square
+    x_range = xmax - xmin
+    y_range = ymax - ymin
+
+    if x_range > y_range:
+        xmin -= edge_buffer
+        xmax += edge_buffer
+        half_big_range = x_range / 2
+        if all([ymax <= (profile_centre_y + half_big_range),
+                ymin >= (profile_centre_y - half_big_range)]):
+            ymax = profile_centre_y + half_big_range + edge_buffer
+            ymin = profile_centre_y - half_big_range - edge_buffer
+
+        elif ymax <= (profile_centre_y + half_big_range):
+            residual = x_range - abs(profile_centre_y - ymin)
+            ymin -= edge_buffer
+            ymax = profile_centre_y + residual + edge_buffer
+
+        else:
+            residual = x_range - abs(profile_centre_y - ymax)
+            ymax += edge_buffer
+            ymin = profile_centre_y - residual - edge_buffer
+
+    elif x_range < y_range:
+        ymin -= edge_buffer
+        ymax += edge_buffer
+        half_big_range = y_range / 2
+        if all([xmax <= (profile_centre_x + half_big_range),
+                xmin >= (profile_centre_x - half_big_range)]):
+            xmax = profile_centre_x + half_big_range + edge_buffer
+            xmin = profile_centre_x - half_big_range - edge_buffer
+
+        elif xmax <= (profile_centre_x + half_big_range):
+            residual = y_range - abs(profile_centre_x - xmin)
+            xmin -= edge_buffer
+            xmax = profile_centre_x + residual + edge_buffer
+
+        else:
+            residual = y_range - abs(profile_centre_x - xmax)
+            xmax += edge_buffer
+            xmin = profile_centre_x - residual - edge_buffer
+
+    else:
+        xmin -= edge_buffer
+        xmax += edge_buffer
+        ymin -= edge_buffer
+        ymax += edge_buffer
+
+    return xmin, ymin, xmax, ymax
+
 
 
 class MyMplCanvas(FigureCanvas):
@@ -126,55 +189,57 @@ class MapCanvas(MyMapCanvas):
         self.component = component.lower()
         self.cax = None
         self.colorbar = None
-        self.plot_map()
-        self.plot_big_map()
+        self.plot_big_map(profile=self.profile, axis=self.big_map)
+        self.plot_zoomed_map_interface()
 
-    def plot_big_map(self):
-        geometry = self.profile.all_profiles.geometry
+    @staticmethod
+    def plot_big_map(profile, axis):
+        geometry = profile.all_profiles.geometry
         if len(geometry) > 1:
             mls = MultiLineString(geometry)
         else:
             mls = geometry
 
         for line in mls:
-            self.big_map.plot(line.xy[0], line.xy[1], "r-")
-        points_or_profiles = self.profile.all_profiles.points_or_lines
+            axis.plot(line.xy[0], line.xy[1], "r-")
+        points_or_profiles = profile.all_profiles.points_or_lines
         for item in points_or_profiles:
             if isinstance(item, Point):
-                self.big_map.plot(item.x, item.y, "k.")
+                axis.plot(item.x, item.y, "k.")
             else:
-                self.big_map.plot(item.xy[0], item.xy[1], "k-")
+                axis.plot(item.xy[0], item.xy[1], "k-")
 
-        centre = self.profile.centre
-        self.big_map.plot(centre.x, centre.y, "*", markerfacecolor='c',
-                          markeredgewidth=1.5, markeredgecolor="k", markersize=20)
+        centre = profile.centre
+        axis.plot(centre.x, centre.y, "*", markerfacecolor='c',
+                  markeredgewidth=1.5, markeredgecolor="k", markersize=20)
 
-        self.big_map.set_aspect('equal')
-        self.big_map.get_xaxis().set_visible(False)
-        self.big_map.get_yaxis().set_visible(False)
+        axis.set_aspect('equal')
+        axis.get_xaxis().set_visible(False)
+        axis.get_yaxis().set_visible(False)
 
-    def plot_map(self):
-        self.axes.clear()
+    @staticmethod
+    def plot_map(profile, component: str, all_axes):
+        all_axes.clear()
         width=135
 
-        marker_width = width * 1.5 / len(self.profile.x_data)
+        marker_width = width * 1.5 / len(profile.x_data)
         marker_area = marker_width**2
 
-        if self.profile.topo:
+        if profile.topo:
             ls = LightSource(azdeg=315, altdeg=45)
         else:
             ls = None
 
-        x, y = self.profile.x_data, self.profile.y_data
-        if self.component in ("x1", "displacement", "east"):
-            z = self.profile.x1_mesh
-            displacements = self.profile.x1.displacements
-        elif self.component in ("x2", "north"):
-            z = self.profile.x2_mesh
-            displacements = self.profile.x2.displacements
+        x, y = profile.x_data, profile.y_data
+        if component in ("x1", "displacement", "east"):
+            z = profile.x1_mesh
+            displacements = profile.x1.displacements
+        elif component in ("x2", "north"):
+            z = profile.x2_mesh
+            displacements = profile.x2.displacements
         else:
-            z = self.profile.x3_mesh
-            displacements = self.profile.x3.displacements
+            z = profile.x3_mesh
+            displacements = profile.x3.displacements
 
         z_array = z.flatten()
         z_max = np.nanpercentile(z_array, 97.5)
@@ -182,74 +247,76 @@ class MapCanvas(MyMapCanvas):
 
         x_mesh, y_mesh = np.meshgrid(x, y)
 
-        indices = np.array(list(self.profile.excluded))
+        indices = np.array(list(profile.excluded))
 
-        if all([len(indices) > 0, self.profile.included]):
-            included_indices = np.array(list(self.profile.included))
+        if all([len(indices) > 0, profile.included]):
+            included_indices = np.array(list(profile.included))
             included_z = displacements[included_indices]
 
-            if self.profile.topo:
-                shade = ls.hillshade(z, vert_exag=1, dx=self.profile.grid_spacing,
-                                     dy=self.profile.grid_spacing)
-                scatter = self.axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=shade.flatten(), cmap="gray",
+            if profile.topo:
+                shade = ls.hillshade(z, vert_exag=1, dx=profile.grid_spacing,
+                                     dy=profile.grid_spacing)
+                scatter = all_axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=shade.flatten(), cmap="gray",
                                             marker="s", s=marker_area, vmax=1, vmin=0)
             else:
-                scatter = self.axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=z.flatten(), cmap="magma",
+                scatter = all_axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=z.flatten(), cmap="magma",
                                             marker="s", s=marker_area, vmax=max(included_z), vmin=min(included_z))
 
-            points = [self.profile.points[i] for i in indices]
+            points = [profile.points[i] for i in indices]
             x_points = [point.x for point in points]
             y_points = [point.y for point in points]
-            self.axes.scatter(x_points, y_points, edgecolor="c", facecolor="none", marker="s", s=marker_area)
+            all_axes.scatter(x_points, y_points, edgecolor="c", facecolor="none", marker="s", s=marker_area)
 
         else:
-            if self.profile.topo:
-                shade = ls.hillshade(z, vert_exag=1, dx=self.profile.grid_spacing,
-                                     dy=self.profile.grid_spacing)
-                scatter = self.axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=shade.flatten(), cmap="gray",
+            if profile.topo:
+                shade = ls.hillshade(z, vert_exag=1, dx=profile.grid_spacing,
+                                     dy=profile.grid_spacing)
+                scatter = all_axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=shade.flatten(), cmap="gray",
                                             marker="s", s=marker_area, vmax=1, vmin=0)
             else:
-                scatter = self.axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=z.flatten(), cmap="magma",
+                scatter = all_axes.scatter(x_mesh.flatten(), y_mesh.flatten(), c=z.flatten(), cmap="magma",
                                             marker="s", s=marker_area, vmax=z_max, vmin=z_min)
 
-        for geom in self.profile.all_profiles.geometry:
+        for geom in profile.all_profiles.geometry:
             fault_x, fault_y = geom.xy
-            self.axes.plot(fault_x, fault_y)
+            all_axes.plot(fault_x, fault_y)
 
-        if self.profile.wiggly:
-            polygon = self.profile.polygon_wiggle_array
-            bounds = self.profile.polygon_with_wiggles.bounds
+        if profile.wiggly:
+            polygon = profile.polygon_wiggle_array
+            bounds = profile.polygon_with_wiggles.bounds
         else:
-            polygon = self.profile.polygon_array
-            bounds = self.profile.polygon.bounds
+            polygon = profile.polygon_array
+            bounds = profile.polygon.bounds
 
-        self.axes.plot(polygon[:, 0], polygon[:, 1], "k--", linewidth=0.5)
+        all_axes.plot(polygon[:, 0], polygon[:, 1], "k--", linewidth=0.5)
 
-        if self.profile.wiggly:
-            self.axes.plot(self.profile.wiggly_line_array[:, 0], self.profile.wiggly_line_array[:, 1], "r-", linewidth=0.5)
+        if profile.wiggly:
+            all_axes.plot(profile.wiggly_line_array[:, 0], profile.wiggly_line_array[:, 1], "r-", linewidth=0.5)
 
-        end_x, end_y = self.profile.profile_ends
-        self.axes.plot(end_x, end_y, "k-", linewidth=0.5)
+        end_x, end_y = profile.profile_ends
+        all_axes.plot(end_x, end_y, "k-", linewidth=0.5)
 
-        edge_x, edge_y = self.profile.profile_edges
-        self.axes.plot(edge_x, edge_y, "k:", linewidth=0.5)
+        edge_x, edge_y = profile.profile_edges
+        all_axes.plot(edge_x, edge_y, "k:", linewidth=0.5)
 
-        xmin, ymin, xmax, ymax = bounds
-        xmin -= 2 * self.profile.grid_spacing
-        ymin -= 2 * self.profile.grid_spacing
-        xmax += 2 * self.profile.grid_spacing
-        ymax += 2 * self.profile.grid_spacing
-        self.axes.set_xlim(xmin, xmax)
-        self.axes.set_ylim(ymin, ymax)
+        x1, y1, x2, y2 = bounds
+        square_x1, square_y1, square_x2, square_y2 = square_box_from_bounds(x1, y1, x2, y2,
+                                                                            profile_centre_x=profile.centre.x,
+                                                                            profile_centre_y=profile.centre.y,
+                                                                            edge_buffer=2 * profile.grid_spacing)
 
-        # self.axes.set_xlim(self.profile.centre.x - self.profile.length/2 - 2 * self.profile.grid_spacing,
-        #                    self.profile.centre.x + self.profile.length / 2 + 2 * self.profile.grid_spacing)
-        # self.axes.set_ylim(self.profile.centre.y - self.profile.length/2 - 2 * self.profile.grid_spacing,
-        #                    self.profile.centre.y + self.profile.length / 2 + 2 * self.profile.grid_spacing)
-        self.axes.set_aspect('equal')
-        self.axes.get_xaxis().set_visible(False)
-        self.axes.get_yaxis().set_visible(False)
+        all_axes.set_xlim(square_x1, square_x2)
+        all_axes.set_ylim(square_y1, square_y2)
 
+        all_axes.set_aspect('equal')
+        all_axes.get_xaxis().set_visible(False)
+        all_axes.get_yaxis().set_visible(False)
+
+        return scatter
+
+    def plot_zoomed_map_interface(self):
+
+        scatter = self.plot_map(profile=self.profile, component=self.component, all_axes=self.axes)
         divider = make_axes_locatable(self.axes)
 
         if self.cax is not None:
@@ -261,6 +328,15 @@ class MapCanvas(MyMapCanvas):
             self.colorbar.set_label("Displacement (m)")
 
         self.draw()
+        return
+
+    def plot_zoomed_map_axis(self, axis):
+        scatter = self.plot_map(profile=self.profile, component=self.component, all_axes=axis)
+        divider = make_axes_locatable(axis)
+        if not self.profile.topo:
+            self.cax = divider.append_axes('bottom', size='5%', pad=0.05)
+            self.colorbar = self.fig.colorbar(scatter, cax=self.cax, orientation='horizontal')
+            self.colorbar.set_label("Displacement (m)")
 
 
 

@@ -6,6 +6,7 @@ from itertools import product
 from fault_profile_tool.mosaic.mosaic_initial import DisplacementMesh
 from fault_profile_tool.io.array_operations import read_tiff
 from fault_profile_tool.profiles.deformation_calculations import Segment, CombinedSegment
+from fault_profile_tool.displacement_distribution.canvas import square_box_from_bounds
 import os
 
 
@@ -275,11 +276,11 @@ class ProfileSwath(DisplacementMesh):
     def trim_data(self):
         bounds = self.polygon_with_wiggles.bounds if self.wiggly else self.polygon.bounds
 
-        xmin, ymin, xmax, ymax = bounds
-        xmin -= 2 * self.grid_spacing
-        ymin -= 2 * self.grid_spacing
-        xmax += 2 * self.grid_spacing
-        ymax += 2 * self.grid_spacing
+
+        x1, y1, x2, y2 = bounds
+        xmin, ymin, xmax, ymax = square_box_from_bounds(x1, y1, x2, y2, self.centre.x, self.centre.y,
+                                                        edge_buffer=3 * self.grid_spacing)
+
 
         corners = [xmin, xmax, ymin, ymax]
 

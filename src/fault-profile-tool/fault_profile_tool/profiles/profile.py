@@ -470,7 +470,7 @@ class Profile(ProfileSwath):
         if self.current_graph is not None:
             for map_i in self.maps.components:
                 if map_i.component.lower() == self.current_graph.component.lower():
-                    map_i.plot_map()
+                    map_i.plot_zoomed_map_interface()
 
     def find_control(self):
         for graph in self.graphs.components:
@@ -560,7 +560,7 @@ class Profile(ProfileSwath):
         self.include_all()
         for map_i in self.maps.components:
             if map_i.component.lower() == self.current_graph.component.lower():
-                map_i.plot_map()
+                map_i.plot_zoomed_map_interface()
 
         for component, graph in zip(self.components, self.graphs.components):
             x_max = max(abs(component.distances))
